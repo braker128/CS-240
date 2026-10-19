@@ -1,4 +1,6 @@
-# MARS 4.5 | standalone game | Keyboard/Display MMIO input + Bitmap Display
+# STOCK MARS 4.5 - NUMERIC CONTROLS WITH PLAY AGAIN
+# Uses only the native Keyboard/Display MMIO Simulator and Bitmap Display.
+# Buffered bitmap updates, bounded repaint bursts, and sleeping input polling.
 # BITMAP SETTINGS: unit width/height 2, display width/height 512,
 # base address 0x10010000 (static data); logical canvas 256 x 256.
 # Assemble ONE game; open and connect BOTH tools BEFORE Run. Keyboard input
@@ -23,6 +25,8 @@ tt_winStatus:    .asciiz "PLAYER X WINS!"
 tt_winPrompt:    .asciiz "PLAYER X WINS. GAME OVER."
 tt_drawStatus:   .asciiz "DRAW - WELL PLAYED!"
 tt_drawPrompt:   .asciiz "DRAW. ALL NINE CELLS FILLED."
+tt_replayPrompt: .asciiz "PLAY AGAIN? 1 YES, 0 QUIT; ENTER"
+tt_quitPrompt: .asciiz "GAME OVER. THANKS FOR PLAYING."
 
 # Rectangles within the current cell, whose origin is kept in $t4/$t5.
 .macro tt_box (%x, %y, %w, %h)
@@ -85,7 +89,7 @@ playerWins:
     jal tt_status
     la $a0, tt_winPrompt
     jal ui_prompt
-    j exit
+    j tt_play_again
 
 draw:
     jal printBoard
@@ -94,10 +98,21 @@ draw:
     jal tt_status
     la $a0, tt_drawPrompt
     jal ui_prompt
-    j exit
+    j tt_play_again
+
+tt_play_again:
+    la $a0, tt_replayPrompt
+    jal ui_prompt
+    jal ui_read_int
+    beqz $v1, tt_play_again
+    beq $v0, 1, gameStart
+    beqz $v0, exit
+    j tt_play_again
 
 exit:
     # The bitmap retains the final position and result after program exit.
+    la $a0, tt_quitPrompt
+    jal ui_prompt
     li $v0, 10
     syscall
 
@@ -326,6 +341,7 @@ prompt_move:
     la $a0, tt_prompt
     jal ui_prompt
     jal ui_read_int
+    beqz $v1, move_rangeError
     move $t2, $v0
     blt $t2, 1, move_rangeError
     bgt $t2, 9, move_rangeError
@@ -444,9 +460,11 @@ cw_yes:
     jr   $ra
 
 
+
 # Shared bitmap renderer and MMIO keyboard driver.
 # Every public UI routine preserves the game's register state, including HI/LO.
-# Only ui_read_int returns a new $v0. No console I/O is used.
+# ui_read_int returns value in $v0, success 1/0 in $v1. Invalid text returns 0/0.
+# All other public UI register-preservation contracts are unchanged.
 .data
 .align 2
 ui_bg: .word 0x0B1423
@@ -458,6 +476,12 @@ ui_input_buf: .space 40
 ui_char_buf: .space 4
 ui_cr_pending: .word 0
 ui_overflow_count: .word 0
+# Drawing happens offscreen. Only ui_present touches watched bitmap memory.
+# Separate shadow avoids even READ notifications from the Bitmap tool.
+.align 2
+ui_canvas: .space 262144
+ui_shadow: .space 262144
+ui_dirty_rows: .space 1024
 ui_font:
     .byte 0,0,0,0,0,0,0 # ASCII 32
     .byte 4,4,4,4,4,0,4 # ASCII 33
@@ -558,7 +582,7 @@ ui_font:
 .text
 
 ui_rect:
-    addiu $sp,$sp,-32
+    addiu $sp,$sp,-36
     sw $t0,0($sp)
     sw $t1,4($sp)
     sw $t2,8($sp)
@@ -567,6 +591,7 @@ ui_rect:
     sw $t5,20($sp)
     sw $t6,24($sp)
     sw $t7,28($sp)
+    sw $t8,32($sp)
 # Intersect the rectangle with the 256x256 framebuffer.
     addu $t2,$a0,$a2
     addu $t3,$a1,$a3
@@ -589,10 +614,16 @@ ui_rect_bottom_ok:
     sll $t4,$t1,8
     addu $t4,$t4,$t0
     sll $t4,$t4,2
-    li $t5,0x10010000
+    la $t5,ui_canvas
     addu $t4,$t4,$t5
     subu $t6,$t2,$t0
 ui_rect_row:
+    # A row is dirty even if the final composited pixels match the old frame.
+    la $t8,ui_dirty_rows
+    sll $t5,$t1,2
+    addu $t8,$t8,$t5
+    li $t5,1
+    sw $t5,0($t8)
     move $t5,$t4
     move $t7,$t6
 ui_rect_col:
@@ -612,7 +643,77 @@ ui_rect_return:
     lw $t5,20($sp)
     lw $t6,24($sp)
     lw $t7,28($sp)
-    addiu $sp,$sp,32
+    lw $t8,32($sp)
+    addiu $sp,$sp,36
+    jr $ra
+
+ui_present:
+    addiu $sp,$sp,-48
+    sw $t0,0($sp)
+    sw $t1,4($sp)
+    sw $t2,8($sp)
+    sw $t3,12($sp)
+    sw $t4,16($sp)
+    sw $t5,20($sp)
+    sw $t6,24($sp)
+    sw $t7,28($sp)
+    sw $t8,32($sp)
+    sw $t9,36($sp)
+    sw $a0,40($sp)
+    sw $v0,44($sp)
+la $t0,ui_canvas
+    la $t1,ui_shadow
+    li $t2,0x10010000
+    la $t3,ui_dirty_rows
+    li $t4,256
+    li $t8,0
+ui_present_row:
+    lw $t9,0($t3)
+    beqz $t9,ui_present_skip_row
+    sw $zero,0($t3)
+    li $t5,256
+ui_present_pixel:
+    lw $t6,0($t0)
+    lw $t7,0($t1)
+    beq $t6,$t7,ui_present_next_pixel
+    sw $t6,0($t1)
+    sw $t6,0($t2)
+    addiu $t8,$t8,1
+    # Bound the repaint burst; let Swing service pending paint events.
+    blt $t8,512,ui_present_next_pixel
+    li $t8,0
+    li $v0,32
+    li $a0,1
+    syscall
+ui_present_next_pixel:
+    addiu $t0,$t0,4
+    addiu $t1,$t1,4
+    addiu $t2,$t2,4
+    addiu $t5,$t5,-1
+    bgtz $t5,ui_present_pixel
+    j ui_present_next_row
+ui_present_skip_row:
+    addiu $t0,$t0,1024
+    addiu $t1,$t1,1024
+    addiu $t2,$t2,1024
+ui_present_next_row:
+    addiu $t3,$t3,4
+    addiu $t4,$t4,-1
+    bgtz $t4,ui_present_row
+ui_present_return:
+    lw $t0,0($sp)
+    lw $t1,4($sp)
+    lw $t2,8($sp)
+    lw $t3,12($sp)
+    lw $t4,16($sp)
+    lw $t5,20($sp)
+    lw $t6,24($sp)
+    lw $t7,28($sp)
+    lw $t8,32($sp)
+    lw $t9,36($sp)
+    lw $a0,40($sp)
+    lw $v0,44($sp)
+    addiu $sp,$sp,48
     jr $ra
 
 ui_text:
@@ -841,6 +942,7 @@ move $t1,$a0
     li $a2,219
     li $a3,0xEAF1F7
     jal ui_text
+    jal ui_present
 ui_prompt_return:
     lw $a0,0($sp)
     lw $a1,4($sp)
@@ -854,14 +956,23 @@ ui_prompt_return:
     jr $ra
 
 ui_getchar:
-    addiu $sp,$sp,-8
+    addiu $sp,$sp,-16
     sw $t0,0($sp)
     sw $t1,4($sp)
-li $t0,0xFFFF0000
+    sw $a0,8($sp)
+    sw $ra,12($sp)
+jal ui_present
+    li $t0,0xFFFF0000
 ui_getchar_poll:
     lw $t1,0($t0)
     andi $t1,$t1,1
-    beqz $t1,ui_getchar_poll
+    bnez $t1,ui_getchar_ready
+    # Do not spin at full speed while the user is idle.
+    li $v0,32
+    li $a0,10
+    syscall
+    j ui_getchar_poll
+ui_getchar_ready:
     lw $v0,4($t0)
     andi $v0,$v0,255
     # Ignore an LF immediately following CR (pasted CRLF input).
@@ -876,7 +987,9 @@ ui_getchar_check_cr:
 ui_getchar_return:
     lw $t0,0($sp)
     lw $t1,4($sp)
-    addiu $sp,$sp,8
+    lw $a0,8($sp)
+    lw $ra,12($sp)
+    addiu $sp,$sp,16
     jr $ra
 
 ui_input_draw:
@@ -914,7 +1027,6 @@ ui_read_int:
     sw $a1,4($sp)
     sw $a2,8($sp)
     sw $a3,12($sp)
-    sw $v1,16($sp)
     sw $s0,20($sp)
     sw $s1,24($sp)
     sw $s2,28($sp)
@@ -1018,11 +1130,13 @@ ui_read_int_accumulate:
     lbu $t0,0($s2)
     bnez $t0,ui_read_int_digit_loop
     move $v0,$s3
+    li $v1,1
     beqz $s4,ui_read_int_return
     subu $v0,$zero,$v0
     j ui_read_int_return
 ui_read_int_invalid:
-    li $v0,0x80000000
+    move $v0,$zero
+    move $v1,$zero
 ui_read_int_return:
     lw $t0,60($sp)
     mthi $t0
@@ -1032,7 +1146,6 @@ ui_read_int_return:
     lw $a1,4($sp)
     lw $a2,8($sp)
     lw $a3,12($sp)
-    lw $v1,16($sp)
     lw $s0,20($sp)
     lw $s1,24($sp)
     lw $s2,28($sp)
@@ -1062,11 +1175,14 @@ ui_wait_enter_return:
     jr $ra
 
 ui_pause:
-    addiu $sp,$sp,-4
+    addiu $sp,$sp,-8
     sw $v0,0($sp)
-li $v0,32
+    sw $ra,4($sp)
+jal ui_present
+    li $v0,32
     syscall
 ui_pause_return:
     lw $v0,0($sp)
-    addiu $sp,$sp,4
+    lw $ra,4($sp)
+    addiu $sp,$sp,8
     jr $ra
