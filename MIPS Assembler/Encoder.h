@@ -5,5 +5,20 @@
 #pragma once
 
 class Encoder {
-};
+public:
 
+    Encoder();
+
+
+    int getOpcode();
+    int getSourceRegister();
+    int getTargetRegister();
+    int getDestinationRegister();
+    int getShiftAmount();
+    int getFunction();
+    int getImmediate();
+    int getAddress();
+
+
+private:
+};

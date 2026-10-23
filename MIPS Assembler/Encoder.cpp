@@ -3,15 +3,50 @@
 //
 
 #include "Encoder.h"
+
+
+
+int getOpcode() {
+
+}
+
+int getSourceRegister() {
+
+}
+
+int getTargetRegister() {
+
+}
+
+int getDestinationRegister() {
+
+}
+
+int getShiftAmount() {
+
+}
+
+int getFunction() {
+
+}
+
+int getImmediate() {
+
+}
+
+int getAddress() {
+
+}
+
 // R-type
 // opcode: 000000, rs: 00000, rt: 00000, rd: 00000, shamt: 00000, funct: 000000
 
 
 
 // I-type
-// opcode: 000000, rs: 00000, rt: 00000, immediate: 0000000000000000
+// opcode: 001000, rs: 00000, rt: 00000, immediate: 0000000000000000
 
 
 
 // J-type
-// opcode: 000000, target: 00000000000000000000000000
+// opcode: 000010, target address: 00000000000000000000000000
