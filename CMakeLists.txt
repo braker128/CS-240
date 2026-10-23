@@ -14,4 +14,6 @@ add_executable(MIPS_ASSEMBLER
         "MIPS Assembler/Instruction.h"
         "MIPS Assembler/Encoder.cpp"
         "MIPS Assembler/Encoder.h"
+        "MIPS Disassembler/Disassembler.cpp"
+        "MIPS Disassembler/Disassembler.h"
 )
