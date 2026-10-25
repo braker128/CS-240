@@ -3,13 +3,14 @@
 //
 
 #pragma once
+#include "ParsedLine.h"
 
 using namespace std;
 
 
 class Assembler {
 public:
-
+    vector<ParsedLine> expandPseudo(const ParsedLine& parsed);
 
 
 
