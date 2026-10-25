@@ -7,7 +7,7 @@
 
 
 int getOpcode() {
-
+    
 }
 
 int getSourceRegister() {

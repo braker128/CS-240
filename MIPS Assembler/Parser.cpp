@@ -26,55 +26,55 @@ output .mhc-ascii and .mhc-bin
 // comments -> remove / ignore
 
 // =========== Pseudo-Instruction ===========
-// move $t0, $t1
-// -> addu $t0, $t1, $zero
+// move $rd, $rs
+// -> addu $rd, $rs, $zero
 
-// li $t0, value
+// li $rt, value
 // General 32-bit constant:
-// -> lui $t0, upper16(value)
-// -> ori $t0, $t0, lower16(value)
+// -> lui $rt, upper16(value)
+// -> ori $rt, $rt, lower16(value)
 
-// la $t0, label
+// la $rt, label
 // For a fixed absolute label address:
-// -> lui $t0, upper16(address_of_label)
-// -> ori $t0, $t0, lower16(address_of_label)
+// -> lui $rt, upper16(address_of_label)
+// -> ori $rt, $rt, lower16(address_of_label)
 
-// abs $t0, $t1
-// -> sra  $at, $t1, 31
-// -> xor  $t0, $t1, $at
-// -> subu $t0, $t0, $at
+// abs $rd, $rs
+// -> sra  $at, $rs, 31
+// -> xor  $rd, $rs, $at
+// -> subu $rd, $rd, $at
 
-// neg $t0, $t1
-// -> sub $t0, $zero, $t1
+// neg $rd, $rs
+// -> sub $rd, $zero, $rs
 
-// negu $t0, $t1
-// -> subu $t0, $zero, $t1
+// negu $rd, $rs
+// -> subu $rd, $zero, $rs
 
-// not $t0, $t1
-// -> nor $t0, $t1, $zero
+// not $rd, $rs
+// -> nor $rd, $rs, $zero
 
-// blt $t1, $t2, label
-// -> slt $at, $t1, $t2
+// blt $rs, $rt, label
+// -> slt $at, $rs, $rt
 // -> bne $at, $zero, label
 
-// bgt $t1, $t2, label
-// -> slt $at, $t2, $t1
+// bgt $rs, $rt, label
+// -> slt $at, $rt, $rs
 // -> bne $at, $zero, label
 
-// ble $t1, $t2, label
-// -> slt $at, $t2, $t1
+// ble $rs, $rt, label
+// -> slt $at, $rt, $rs
 // -> beq $at, $zero, label
 
-// bge $t1, $t2, label
-// -> slt $at, $t1, $t2
+// bge $rs, $rt, label
+// -> slt $at, $rs, $rt
 // -> beq $at, $zero, label
 
-// sge $t0, $t1, $t2
-// -> slt  $t0, $t1, $t2
-// -> xori $t0, $t0, 1
+// sge $rd, $rs, $rt
+// -> slt  $rd, $rs, $rt
+// -> xori $rd, $rd, 1
 
-// sgt $t0, $t1, $t2
-// -> slt $t0, $t2, $t1
+// sgt $rd, $rs, $rt
+// -> slt $rd, $rt, $rs
 
 
 // =============== Instruction ===============
