@@ -4,116 +4,56 @@
 
 #include "Parser.h"
 #include <iostream>
-#include <array>
-#include <string>
+#include <sstream>
+#include <vector>
+
+#include "ParsedLine.h"
 
 using namespace std;
 
-/*
-Accept filepath as a string
-Instantiate file instance
-read file contents
-read line by line (keep track with a variable for labels)
+ParsedLine Parser::parseLine(const string& line, int lineNumber) {
 
-convert
+    // remove comments
+    string cleanLine = line.substr(0, line.find('#'));
 
-output .mhc-ascii and .mhc-bin
-*/
+    // remove commas (',' -> ' ')
+    for (char& c : cleanLine) {
+        if (c == ',') {
+            c = ' ';
+        }
+    }
+    istringstream stream(cleanLine);
 
-// ============ Non Instruction ============
-// .data / .text / .? / etc
-// labels
-// comments -> remove / ignore
+    // variables
+    string mnemonic;
+    vector<string> operands; // dynamic string array of operands
+    ParsedLine parsed;
 
-// =========== Pseudo-Instruction ===========
-// move $rd, $rs
-// -> addu $rd, $rs, $zero
+    stream >> mnemonic; // first word of stream
 
-// li $rt, value
-// General 32-bit constant:
-// -> lui $rt, upper16(value)
-// -> ori $rt, $rt, lower16(value)
+    // skips empty lines
+    if (mnemonic.empty()) {
+        return ParsedLine{};
+    }
 
-// la $rt, label
-// For a fixed absolute label address:
-// -> lui $rt, upper16(address_of_label)
-// -> ori $rt, $rt, lower16(address_of_label)
+    // checks for labels
+    if (!mnemonic.empty() && mnemonic.back() == ':') {
+        parsed.label = mnemonic.substr(0, mnemonic.find(':'));
+        mnemonic.clear();
+        stream >> mnemonic;
+    }
 
-// abs $rd, $rs
-// -> sra  $at, $rs, 31
-// -> xor  $rd, $rs, $at
-// -> subu $rd, $rd, $at
+    string operand; // variable to store operands to before putting them into the string array
 
-// neg $rd, $rs
-// -> sub $rd, $zero, $rs
+    while (stream >> operand) { // whitespace separated elements
+        operands.push_back(operand); // adds next word to the vector
+    }
 
-// negu $rd, $rs
-// -> subu $rd, $zero, $rs
+    parsed.mnemonic = mnemonic;
+    parsed.operands = operands;
+    parsed.lineNumber = lineNumber;
 
-// not $rd, $rs
-// -> nor $rd, $rs, $zero
+    // cout << cleanLine << endl; // Print full lines
 
-// blt $rs, $rt, label
-// -> slt $at, $rs, $rt
-// -> bne $at, $zero, label
-
-// bgt $rs, $rt, label
-// -> slt $at, $rt, $rs
-// -> bne $at, $zero, label
-
-// ble $rs, $rt, label
-// -> slt $at, $rt, $rs
-// -> beq $at, $zero, label
-
-// bge $rs, $rt, label
-// -> slt $at, $rs, $rt
-// -> beq $at, $zero, label
-
-// sge $rd, $rs, $rt
-// -> slt  $rd, $rs, $rt
-// -> xori $rd, $rd, 1
-
-// sgt $rd, $rs, $rt
-// -> slt $rd, $rt, $rs
-
-
-// =============== Instruction ===============
-// Segment String Arrays // delimited by "," ", " or " "
-array<string, 6> RTypeSegments;
-array<string, 4> ITypeSegments;
-array<string, 2> JTypeSegments;
-
-// -> all one array?
-
-
-
-// add $t0, $t1, $t2
-// mnemonic = "add"
-// operands = ["$t0", "$t1, "$t2"]
-
-// li $t9, 9 -> addiu $t9, $zero, 9
-// mnemonic = "addiu"
-// operands = ["$t9", "$zero", "9"]
-
-// rem $t1, $t8, $t3
-// mnemonic = "rem"
-// operands = ["$t1", "$t8", "$t3"]
-
-// beq $t1, $t2, fizzbuzz
-// mnemonic = "beq"
-// operands = ["$t1", "$t12", "fizzbuzz"]
-
-// label
-
-// mnemonic
-
-// directive
-
-// operands
-
-// comment
-
-// blank line
-
-
-
+    return parsed;
+}

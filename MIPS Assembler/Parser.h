@@ -3,10 +3,13 @@
 //
 
 #pragma once
+#include <string>
+
+#include "ParsedLine.h"
 
 using namespace std;
 class Parser {
     public:
-    
+    ParsedLine parseLine(const string& line, int lineNumber);
 };
 
