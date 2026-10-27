@@ -4,7 +4,7 @@
 
 #include "Parser.h"
 #include <iostream>
-#include <sstream>
+#include <stdexcept>
 #include <vector>
 
 #include "ParsedLine.h"
@@ -48,48 +48,47 @@ ParsedLine Parser::parseLine(const string& line, int lineNumber) {
             }
             word += c;
         }
+    }
 
-        if (!word.empty()) {
-            words.push_back(word);
-        }
+    if (!word.empty()) {
+        words.push_back(word);
+    }
 
-        if (quote != 0) {
-            throw runtime_error("Unterminated quote on line " + to_string(lineNumber));
-        }
+    if (quote != 0) {
+        throw runtime_error("Unterminated quote on line " + to_string(lineNumber));
+    }
 
-        // skips empty lines <3
-        if (word.empty()) {
-            return ParsedLine();
-        }
+    // skips empty lines <3
+    if (words.empty()) {
+        return ParsedLine();
+    }
 
-        size_t index = 0; // next word
+    size_t index = 0; // next word
 
-        mnemonic = words[index];
-        index++;
+    mnemonic = words[index];
+    index++;
 
-        // LABELS
-        if (mnemonic.back() == ':') {
-            parsed.label = mnemonic.substr(0, mnemonic.find(':'));
-            mnemonic.clear();
+    // LABELS
+    if (mnemonic.back() == ':') {
+        parsed.label = mnemonic.substr(0, mnemonic.find(':'));
+        mnemonic.clear();
 
-            if (index < words.size()) { // labels don't have mnemonics
-                mnemonic = words[index];
-                index++;
-            }
-        }
-
-        while (index < words.size()) { // the rest are operands then
-            operands.push_back(words[index]); // adds next words as operands
+        if (index < words.size()) { // labels don't have mnemonics
+            mnemonic = words[index];
             index++;
         }
+    }
 
+    while (index < words.size()) { // the rest are operands then
+        operands.push_back(words[index]); // adds next words as operands
+        index++;
     }
 
     parsed.mnemonic = mnemonic;
     parsed.operands = operands;
     parsed.lineNumber = lineNumber;
 
-    // cout << cleanLine << endl; // Print full lines
+    // cout << line; // Print full lines
 
     return parsed;
 }
