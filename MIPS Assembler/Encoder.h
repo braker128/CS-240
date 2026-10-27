@@ -3,22 +3,15 @@
 //
 
 #pragma once
+#include <cstdint>
+#include <string>
+#include "ParsedLine.h"
+
 
 class Encoder {
 public:
-
-    Encoder();
-
-
-    int getOpcode();
-    int getSourceRegister();
-    int getTargetRegister();
-    int getDestinationRegister();
-    int getShiftAmount();
-    int getFunction();
-    int getImmediate();
-    int getAddress();
-
+    uint32_t encode(const ParsedLine& instruction);
 
 private:
+    int registerNumber(const string& reg);
 };
