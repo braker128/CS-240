@@ -12,41 +12,77 @@
 using namespace std;
 
 ParsedLine Parser::parseLine(const string& line, int lineNumber) {
-
-    // remove comments
-    string cleanLine = line.substr(0, line.find('#'));
-
-    // remove commas (',' -> ' ')
-    for (char& c : cleanLine) {
-        if (c == ',') {
-            c = ' ';
-        }
-    }
-    istringstream stream(cleanLine);
-
     // variables
     string mnemonic;
     vector<string> operands; // dynamic string array of operands
     ParsedLine parsed;
 
-    stream >> mnemonic; // first word of stream
+    vector<string> words;
+    string word;
+    char quote = 0;
+    bool escaped = false;
 
-    // skips empty lines
-    if (mnemonic.empty()) {
-        return ParsedLine{};
-    }
+    for (char c : line) {
+        if (quote != 0) {
+            word += c;
+            if (escaped) { // like \"
+                escaped = false;
+            } else if (c == '\\') {
+                escaped = true;
+            } else if (c == quote) { // closing quote
+                quote = 0;
+            }
+        }
+        else if (c == '#') { // remove comments
+            break;
+        }
+        else if (c == ' ' || c == '\t' || c == '\r' || c == ',') { // end of a word
+            if (!word.empty()) {
+                words.push_back(word);
+                word.clear();
+            }
+        }
+        else {
+            if (c == '"' || c == '\'') { // opening quote
+                quote = c;
+            }
+            word += c;
+        }
 
-    // checks for labels
-    if (!mnemonic.empty() && mnemonic.back() == ':') {
-        parsed.label = mnemonic.substr(0, mnemonic.find(':'));
-        mnemonic.clear();
-        stream >> mnemonic;
-    }
+        if (!word.empty()) {
+            words.push_back(word);
+        }
 
-    string operand; // variable to store operands to before putting them into the string array
+        if (quote != 0) {
+            throw runtime_error("Unterminated quote on line " + to_string(lineNumber));
+        }
 
-    while (stream >> operand) { // whitespace separated elements
-        operands.push_back(operand); // adds next word to the vector
+        // skips empty lines <3
+        if (word.empty()) {
+            return ParsedLine();
+        }
+
+        size_t index = 0; // next word
+
+        mnemonic = words[index];
+        index++;
+
+        // LABELS
+        if (mnemonic.back() == ':') {
+            parsed.label = mnemonic.substr(0, mnemonic.find(':'));
+            mnemonic.clear();
+
+            if (index < words.size()) { // labels don't have mnemonics
+                mnemonic = words[index];
+                index++;
+            }
+        }
+
+        while (index < words.size()) { // the rest are operands then
+            operands.push_back(words[index]); // adds next words as operands
+            index++;
+        }
+
     }
 
     parsed.mnemonic = mnemonic;
