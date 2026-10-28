@@ -110,25 +110,51 @@ vector<ParsedLine> Assembler::expandPseudo(const ParsedLine& parsed) {
         }
     }
 
-    else if (mnemonic == "rem") {
+    else if (mnemonic == "rem" || ((mnemonic == "div" || mnemonic == "divu") && operands.size() == 3)) {
         if (operands.size() != 3) {
-            throw runtime_error("Invalid rem operands");
+            throw runtime_error("Invalid " + mnemonic + " operands on line " + to_string(parsed.lineNumber));
+        }
+
+        string divisor = operands[2];
+
+        // divisor is a number, load it into $at first, ex: div $t0, $t1, 10
+        if (divisor[0] != '$') {
+            for (const ParsedLine& loaded : loadAt(divisor, parsed)) {
+                expanded.push_back(loaded);
+            }
+            instruction.label = ""; // label is already on the first li instruction
+            divisor = "$at";
         }
 
         // Divide source registers
-        instruction.mnemonic = "div";
-        instruction.operands = {operands[1], operands[2]};
+        instruction.mnemonic = (mnemonic == "divu") ? "divu" : "div";
+        instruction.operands = {operands[1], divisor};
 
         expanded.push_back(instruction);
 
-        // remainder -> $rt
-        instruction.mnemonic = "mfhi";
+        // rem: remainder is in hi, div: quotient is in lo
+        instruction.mnemonic = (mnemonic == "rem") ? "mfhi" : "mflo";
         instruction.operands = {operands[0]};
         instruction.label = "";
 
         expanded.push_back(instruction);
 
         return expanded;
+    }
+
+    else if ((mnemonic == "add" || mnemonic == "addu" || mnemonic == "sub" || mnemonic == "subu"
+              || mnemonic == "and" || mnemonic == "or" || mnemonic == "xor" || mnemonic == "nor"
+              || mnemonic == "slt" || mnemonic == "sltu" || mnemonic == "mul")
+             && operands.size() == 3 && operands[2][0] != '$') {
+
+        // last operand is a number, load it into $at first, ex: mul $t0, $s0, 2
+        for (const ParsedLine& loaded : loadAt(operands[2], parsed)) {
+            expanded.push_back(loaded);
+        }
+
+        instruction.mnemonic = mnemonic;
+        instruction.operands = {operands[0], operands[1], "$at"};
+        instruction.label = ""; // label is already on the first li instruction
     }
 
     else if (mnemonic == "beqz" || mnemonic == "bnez") {
@@ -199,6 +225,38 @@ vector<ParsedLine> Assembler::expandPseudo(const ParsedLine& parsed) {
         return expanded;
     }
 
+    else if ((mnemonic == "lw" || mnemonic == "sw" || mnemonic == "lb" || mnemonic == "lbu"
+              || mnemonic == "lh" || mnemonic == "lhu" || mnemonic == "sb" || mnemonic == "sh")
+             && operands.size() == 2 && operands[1].find('(') == string::npos) {
+
+        // address is a label instead of offset($base), ex: lw $t0, ui_bg or sb $zero, buf+1
+        string label = operands[1];
+        string offset = "0";
+
+        size_t plus = label.find('+');
+        if (plus != string::npos) { // buf+1 -> label buf, offset 1
+            offset = label.substr(plus + 1);
+            label = label.substr(0, plus);
+        }
+
+        // same as la $at, label
+        instruction.mnemonic = "lui";
+        instruction.operands = {"$at", "%hi(" + label + ")"};
+        expanded.push_back(instruction);
+
+        instruction.mnemonic = "ori";
+        instruction.operands = {"$at", "$at", "%lo(" + label + ")"};
+        instruction.label = "";
+        expanded.push_back(instruction);
+
+        // then a normal load / store from offset($at)
+        instruction.mnemonic = mnemonic;
+        instruction.operands = {operands[0], offset + "($at)"};
+        expanded.push_back(instruction);
+
+        return expanded;
+             }
+
     else if (mnemonic == "la") {
         if (operands.size() != 2) {
             throw runtime_error("Invalid la operands");
@@ -225,6 +283,17 @@ vector<ParsedLine> Assembler::expandPseudo(const ParsedLine& parsed) {
     return expanded;
 }
 
+// li $at, value for pseudo-instructions that need a number in a register
+// returns 1 or 2 instructions, the original line's label goes on the first one
+vector<ParsedLine> Assembler::loadAt(const string& value, const ParsedLine& parsed) {
+    ParsedLine load;
+    load.lineNumber = parsed.lineNumber;
+    load.label = parsed.label;
+    load.mnemonic = "li";
+    load.operands = {"$at", value};
+
+    return expandPseudo(load);
+}
 
 
 // ============ Pass 1 ============
@@ -234,46 +303,41 @@ vector<ParsedLine> Assembler::expandPseudo(const ParsedLine& parsed) {
 static const uint32_t TEXT_START = 0x00400000;
 static const uint32_t DATA_START = 0x10010000;
 
-// bytes per data directive
-static uint32_t dataSize(const ParsedLine& parsed) {
+// bytes of a .asciiz / .ascii string, an escape like \n is one byte
+static vector<uint8_t> stringBytes(const ParsedLine& parsed) {
     const string& directive = parsed.mnemonic;
     const vector<string>& operands = parsed.operands;
 
-    if (directive == ".asciiz" || directive == ".ascii") {
-        if (operands.size() != 1 || operands[0].size() < 2 || operands[0].front() != '"' || operands[0].back() != '"') {
-            throw runtime_error("Invalid string on line " + to_string(parsed.lineNumber));
+    if (directive != ".asciiz" && directive != ".ascii") {
+        throw runtime_error("Unsupported directive: " + directive + " on line " + to_string(parsed.lineNumber));
+    }
+
+    if (operands.size() != 1 || operands[0].size() < 2 || operands[0].front() != '"' || operands[0].back() != '"') {
+        throw runtime_error("Invalid string on line " + to_string(parsed.lineNumber));
+    }
+
+    const string& text = operands[0];
+    vector<uint8_t> bytes;
+
+    for (size_t i = 1; i + 1 < text.size(); i++) { // between the quotes
+        char c = text[i];
+
+        if (c == '\\') { // escape, use the next character
+            i++;
+            if (text[i] == 'n') { c = '\n'; }
+            else if (text[i] == 't') { c = '\t'; }
+            else if (text[i] == '0') { c = '\0'; }
+            else { c = text[i]; } // \" \\ \'
         }
 
-        const string& text = operands[0];
-
-        // count characters between the quotes, an escape like \n is one byte
-        uint32_t length = 0;
-        for (size_t i = 1; i + 1 < text.size(); i++) {
-            if (text[i] == '\\') {
-                i++;
-            }
-            length++;
-        }
-
-        return (directive == ".asciiz") ? length + 1 : length; // +1 for the null terminator
+        bytes.push_back((uint8_t)c);
     }
 
-    if (directive == ".word") {
-        return 4 * operands.size();
+    if (directive == ".asciiz") {
+        bytes.push_back(0); // null terminator
     }
 
-    if (directive == ".byte") {
-        return operands.size();
-    }
-
-    if (directive == ".space") {
-        if (operands.size() != 1) {
-            throw runtime_error("Invalid .space operands on line " + to_string(parsed.lineNumber));
-        }
-        return stoul(operands[0], nullptr, 0);
-    }
-
-    throw runtime_error("Unsupported directive: " + directive + " on line " + to_string(parsed.lineNumber));
+    return bytes;
 }
 
 
@@ -282,12 +346,12 @@ void Assembler::firstPass(const vector<ParsedLine>& parsedLines) {
 
     bool inText = true; // .text if no directive
     uint32_t textAddress = TEXT_START;
-    uint32_t dataAddress = DATA_START;
 
     unordered_map<string, string> constants; // .eqv name -> replacement text
 
     symbols.clear();
     textInstructions.clear();
+    dataBytes.clear();
 
     for (const ParsedLine& original : parsedLines) {
         ParsedLine parsed = original; // copy so .eqv names can be replaced
@@ -305,55 +369,19 @@ void Assembler::firstPass(const vector<ParsedLine>& parsedLines) {
             continue;
         }
 
-        // replace .eqv names in operands, including the offset in NAME($sp)
+        // replace .eqv names in operands
         for (string& operand : parsed.operands) {
-            size_t open = operand.find('(');
-            string name = operand.substr(0, open); // whole operand if there's no (
-
-            if (constants.count(name)) {
-                operand = constants.at(name) + (open == string::npos ? "" : operand.substr(open));
+            if (constants.count(operand)) {
+                operand = constants.at(operand);
             }
         }
 
-        // section switches, .data can also give a starting address
+        // section switches
         if (mnemonic == ".text") {
-            if (!parsed.operands.empty()) {
-                throw runtime_error(".text with an address is not supported on line " + to_string(parsed.lineNumber));
-            }
             inText = true;
         }
         else if (mnemonic == ".data") {
-            if (parsed.operands.size() == 1) {
-                dataAddress = stoul(parsed.operands[0], nullptr, 0);
-            }
             inText = false;
-        }
-
-        // .word must start on a 4-byte boundary, so align before the label gets its address
-        if (!inText && mnemonic == ".word") {
-            dataAddress = (dataAddress + 3) & ~3u;
-        }
-
-        // .align n -> next address is a multiple of 2^n
-        if (mnemonic == ".align") {
-            if (parsed.operands.size() != 1) {
-                throw runtime_error("Invalid .align operands on line " + to_string(parsed.lineNumber));
-            }
-
-            int power = stoi(parsed.operands[0], nullptr, 0);
-            if (power < 0 || power > 3) {
-                throw runtime_error("Invalid .align amount on line " + to_string(parsed.lineNumber));
-            }
-
-            if (inText) {
-                if (power > 2) { // instructions are already 4-byte aligned, 8 would need padding
-                    throw runtime_error(".align " + to_string(power) + " in .text is not supported on line " + to_string(parsed.lineNumber));
-                }
-            }
-            else {
-                uint32_t size = 1u << power; // 2^power bytes
-                dataAddress = (dataAddress + size - 1) & ~(size - 1);
-            }
         }
 
         // record label at the current address of whichever section we're in
@@ -361,11 +389,11 @@ void Assembler::firstPass(const vector<ParsedLine>& parsedLines) {
             if (symbols.count(parsed.label)) {
                 throw runtime_error("Duplicate label: " + parsed.label + " on line " + to_string(parsed.lineNumber));
             }
-            symbols[parsed.label] = inText ? textAddress : dataAddress;
+            symbols[parsed.label] = inText ? textAddress : DATA_START + (uint32_t)dataBytes.size();
         }
 
-        // label-only lines and directives that take no space
-        if (mnemonic.empty() || mnemonic == ".text" || mnemonic == ".data" || mnemonic == ".globl" || mnemonic == ".align") {
+        // label-only lines and section switches take no space
+        if (mnemonic.empty() || mnemonic == ".text" || mnemonic == ".data") {
             continue;
         }
 
@@ -377,7 +405,8 @@ void Assembler::firstPass(const vector<ParsedLine>& parsedLines) {
             }
         }
         else {
-            dataAddress += dataSize(parsed);
+            vector<uint8_t> bytes = stringBytes(parsed);
+            dataBytes.insert(dataBytes.end(), bytes.begin(), bytes.end()); // add to the end
         }
     }
 }

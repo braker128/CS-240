@@ -39,7 +39,15 @@ int main() {
     }
 
     Assembler assembler;
-    assembler.firstPass(parsedLines);
+    vector<uint32_t> machineCode;
+
+    try {
+        assembler.firstPass(parsedLines);
+        machineCode = assembler.secondPass();
+    } catch (const exception& e) { // any assembler error, ex: "Undefined label: fizz on line 21"
+        cerr << "Error: " << e.what() << endl;
+        return 1;
+    }
 
     cout << "Symbols:" << endl;
     for (const auto& symbol : assembler.getSymbols()) {
@@ -47,10 +55,12 @@ int main() {
     }
 
     cout << endl << "Text:" << endl;
+    const vector<ParsedLine>& instructions = assembler.getTextInstructions();
     uint32_t address = 0x00400000;
-    for (const ParsedLine& instruction : assembler.getTextInstructions()) {
-        cout << "  0x" << hex << setw(8) << setfill('0') << address << dec << "  " << instruction.mnemonic;
-        for (const string& operand : instruction.operands) {
+
+    for (size_t i = 0; i < instructions.size(); i++) {
+        cout << "  0x" << hex << setw(8) << setfill('0') << address << "  0x" << setw(8) << machineCode[i] << dec << "  " << instructions[i].mnemonic;
+        for (const string& operand : instructions[i].operands) {
             cout << " " << operand;
         }
         cout << endl;
