@@ -5,6 +5,9 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <iomanip>
+
+#include "Assembler.h"
 #include "Parser.h"
 
 using namespace std;
@@ -13,7 +16,7 @@ int main() {
     ifstream file(R"(C:\Users\Carter\CLionProjects\CS-240\MIPS Assembler\FizzBuzz.asm)");
 
     if (!file.is_open()) {
-        cerr << "Error opening file!\n";
+        cerr << "Error opening file.\n";
         return 1;
     }
 
@@ -35,17 +38,23 @@ int main() {
         parsedLines.push_back(parsed);
     }
 
-    // Printing
-    for (const ParsedLine& parsed : parsedLines) {
-        cout << "Line: " << parsed.lineNumber << endl;
-        cout << "Mnemonic: " << parsed.mnemonic << endl;
-        cout << "Label: " << parsed.label << endl;
+    Assembler assembler;
+    assembler.firstPass(parsedLines);
 
-        for (const string& operand : parsed.operands) {
-            cout << "Operand: " << operand << endl;
+    cout << "Symbols:" << endl;
+    for (const auto& symbol : assembler.getSymbols()) {
+        cout << "  " << symbol.first << " = 0x" << hex << setw(8) << setfill('0') << symbol.second << dec << endl;
+    }
+
+    cout << endl << "Text:" << endl;
+    uint32_t address = 0x00400000;
+    for (const ParsedLine& instruction : assembler.getTextInstructions()) {
+        cout << "  0x" << hex << setw(8) << setfill('0') << address << dec << "  " << instruction.mnemonic;
+        for (const string& operand : instruction.operands) {
+            cout << " " << operand;
         }
-
         cout << endl;
+        address += 4;
     }
 
     return 0;
