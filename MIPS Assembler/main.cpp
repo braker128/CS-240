@@ -6,6 +6,7 @@
 #include <fstream>
 #include <string>
 #include <iomanip>
+#include <bitset>
 
 #include "Assembler.h"
 #include "Parser.h"
@@ -13,7 +14,9 @@
 using namespace std;
 
 int main() {
-    ifstream file(R"(C:\Users\Carter\CLionProjects\CS-240\MIPS Assembler\FizzBuzz.asm)");
+    // program to assemble, without .asm (outputs go next to it as .mhc-ascii / .mhc-bin)
+    string baseName = R"(C:\Users\Carter\CLionProjects\CS-240\MIPS Assembler\FizzBuzz)";
+    ifstream file(baseName + ".asm");
 
     if (!file.is_open()) {
         cerr << "Error opening file.\n";
@@ -66,6 +69,44 @@ int main() {
         cout << endl;
         address += 4;
     }
+
+    // ============ Output files ============
+
+    // every byte to write: instructions first (high byte first), then data
+    vector<uint8_t> output;
+
+    for (uint32_t word : machineCode) {
+        output.push_back((word >> 24) & 0xFF);
+        output.push_back((word >> 16) & 0xFF);
+        output.push_back((word >> 8) & 0xFF);
+        output.push_back(word & 0xFF);
+    }
+
+    const vector<uint8_t>& dataBytes = assembler.getDataBytes();
+    output.insert(output.end(), dataBytes.begin(), dataBytes.end());
+
+    while (output.size() % 4 != 0) { // pad data to a whole 32-bit line
+        output.push_back(0);
+    }
+
+
+    // .mhc-ascii: one 32-bit word per line as 0s and 1s
+    ofstream asciiFile(baseName + ".mhc-ascii");
+    for (size_t i = 0; i < output.size(); i += 4) {
+        uint32_t word = ((uint32_t)output[i] << 24) | ((uint32_t)output[i + 1] << 16) | ((uint32_t)output[i + 2] << 8) | output[i + 3];
+        asciiFile << bitset<32>(word) << "\n";
+    }
+
+    // .mhc-bin: the same bytes, raw
+    ofstream binFile(baseName + ".mhc-bin", ios::binary);
+    binFile.write((const char*)output.data(), output.size());
+
+    if (!asciiFile || !binFile) {
+        cerr << "Error writing output files.\n";
+        return 1;
+    }
+
+    cout << endl << "Wrote " << baseName << ".mhc-ascii and .mhc-bin (" << output.size() / 4 << " words)" << endl;
 
     return 0;
 }
