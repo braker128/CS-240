@@ -21,4 +21,5 @@ add_executable(MIPS_ASSEMBLER
 add_executable(MIPS_DISASSEMBLER
         "MIPS Disassembler/Disassembler.cpp"
         "MIPS Disassembler/Disassembler.h"
+        "MIPS Disassembler/main.cpp"
 )
