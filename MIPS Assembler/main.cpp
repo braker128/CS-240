@@ -72,14 +72,20 @@ int main() {
 
     // ============ Output files ============
 
-    // every byte to write: instructions first (high byte first), then data
+    // every byte to write: header, instructions, then data
     vector<uint8_t> output;
 
-    for (uint32_t word : machineCode) {
+    auto pushWord = [&](uint32_t word) { // high byte first
         output.push_back((word >> 24) & 0xFF);
         output.push_back((word >> 16) & 0xFF);
         output.push_back((word >> 8) & 0xFF);
         output.push_back(word & 0xFF);
+    };
+
+    pushWord((uint32_t)machineCode.size()); // header: how many instruction words follow, everything after is data
+
+    for (uint32_t word : machineCode) {
+        pushWord(word);
     }
 
     const vector<uint8_t>& dataBytes = assembler.getDataBytes();
